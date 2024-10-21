@@ -57,10 +57,10 @@ public class JobManager {
     public JobManager(int n) {
         if (n < 1) {throw new IllegalArgumentException("n must be at least 1");}
         this.n = n;
-        for (int i = 0; i < n; i++) {
+        for (int i = 1; i < n+1; i++) {
             this.unassignedJobs.add(i);
         }
-    };
+    }
 
     /**
      * Checks if this JobManager has the specified Robot
@@ -69,8 +69,11 @@ public class JobManager {
      * @return true if robot is now in this, and false otherwise
      */
     public boolean hasRobot(Robot robot) {
+
         if (robot == null || robot.isNull()) { return false; }
+        checkRep();
         return this.robotToJobs.containsKey(robot);
+
     }
 
     /**
@@ -84,8 +87,10 @@ public class JobManager {
         if (robot == null || robot.isNull()) { return false; }
         if (!this.robotToJobs.containsKey(robot)) {
             this.robotToJobs.put(robot, new TreeSet<>());
+
             return true;
         }
+        checkRep();
         return false;
     };
 
@@ -102,6 +107,7 @@ public class JobManager {
             this.robotToJobs.remove(robot);
             return true;
         }
+        checkRep();
         return false;
     };
 
@@ -120,13 +126,19 @@ public class JobManager {
     public boolean assignJobs(Robot robot, int jobId) {
         if (robot == null || robot.isNull()) { return false; }
         if (!this.robotToJobs.containsKey(robot)) { return false; }
-        for (Iterator<Integer> jobIter = this.unassignedJobs.iterator(); jobIter.hasNext();) {
-            Integer job = jobIter.next();
+        Set<Integer> jobsToRemove = new HashSet<>();
+
+        for (Integer job : this.unassignedJobs) {
             if (job <= jobId) {
                 this.robotToJobs.get(robot).add(job);
+                jobsToRemove.add(job);
             }
-            else { break; }
         }
+
+        this.unassignedJobs.removeAll(jobsToRemove);
+
+        checkRep();
+
         return true;
     }
 
@@ -138,8 +150,21 @@ public class JobManager {
      *         job is assigned to a robot in this; and false otherwise
      */
     public boolean isAssigned(int jobId) {
-        if (jobId < 1 || jobId > n) { return false; }
-        return this.unassignedJobs.contains(jobId);
+        if (jobId < 1 || jobId > n) {
+            return false;
+        }
+
+        if (this.unassignedJobs.contains(jobId)) {
+            return false;
+        }
+
+        for (Set<Integer> jobs : this.robotToJobs.values()) {
+            if (jobs.contains(jobId)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -154,6 +179,7 @@ public class JobManager {
         for (Robot robot : this.robotToJobs.keySet()) {
             if (this.robotToJobs.get(robot).contains(jobId)) { return new Robot(robot.id); }
         }
+        checkRep();
         return new Robot(0);
     }
 
@@ -176,15 +202,24 @@ public class JobManager {
         if (srcRobot.isNull() || dstRobot.isNull()) { return false; }
         if (jobId < 1) { return false; }
         if (!this.robotToJobs.containsKey(srcRobot) || !this.robotToJobs.containsKey(dstRobot)) { return false; }
-        for (Iterator<Integer> jobIter = this.robotToJobs.get(srcRobot).iterator(); jobIter.hasNext();) {
-            Integer job = jobIter.next();
-            if (job <= jobId) {
-                this.robotToJobs.get(dstRobot).add(job);
-            }
-            else { break; }
-        }
-        return true;
+        Set<Integer> jobsMov = new HashSet<>();
 
+        for (Integer job : this.robotToJobs.get(srcRobot)) {
+            if (job <= jobId) {
+                jobsMov.add(job);
+            } else {
+                break;
+            }
+        }
+        for (Integer job : jobsMov) {
+            this.robotToJobs.get(dstRobot).add(job);
+            this.robotToJobs.get(srcRobot).remove(job);
+            this.unassignedJobs.remove(job);
+        }
+
+        checkRep();
+
+        return true;
     }
 
     /**
@@ -202,7 +237,14 @@ public class JobManager {
         if (srcRobot == null || dstRobot == null) { return false; }
         if (srcRobot.isNull() || dstRobot.isNull()) { return false; }
         if (!this.robotToJobs.containsKey(srcRobot) || !this.robotToJobs.containsKey(dstRobot)) { return false; }
-        this.robotToJobs.get(dstRobot).addAll(this.robotToJobs.get(srcRobot));
+        TreeSet<Integer> srcJobs = this.robotToJobs.get(srcRobot);
+
+        this.robotToJobs.get(dstRobot).addAll(srcJobs);
+        srcJobs.clear();
+        for (Integer job : this.robotToJobs.get(dstRobot)) {
+            this.unassignedJobs.remove(job);
+        }
+        checkRep();
         return true;
     }
 
@@ -220,6 +262,7 @@ public class JobManager {
         if (jobId < 1) { return 0; }
         if (!this.robotToJobs.containsKey(robot)) { return 0; }
         if (this.robotToJobs.get(robot).isEmpty()) { return 0; }
+        checkRep();
         return this.robotToJobs.get(robot).floor(jobId);
     }
 
@@ -266,7 +309,63 @@ public class JobManager {
      * @throws AssertionError if the representation invariant is violated
      */
     public void checkRep() {
-        // TODO implement this method
-        // DO NOT USE THE `assert` keyword; You must use `throw new AssertionError()`
+
+        if (n < 1) {
+            throw new AssertionError("At least 1 job");
+        }
+
+
+        if (unassignedJobs.isEmpty() && robotToJobs.isEmpty()) {
+            throw new AssertionError("At least one unassigned or assigned job");
+        }
+
+
+        for (Integer jobId : unassignedJobs) {
+            if (jobId < 1 || jobId > n) {
+                throw new AssertionError("Unassigned job " + jobId + " is invalid");
+            }
+        }
+
+
+        for (Map.Entry<Robot, TreeSet<Integer>> entry : robotToJobs.entrySet()) {
+            Robot robot = entry.getKey();
+            TreeSet<Integer> jobs = entry.getValue();
+
+            if (robot == null || robot.isNull()) {
+                throw new AssertionError("Robot cannot be null");
+            }
+
+            Integer preJob = null;
+            for (Integer jobId : jobs) {
+                if (jobId < 1 || jobId > n) {
+                    throw new AssertionError( robot.id + " has an invalid id " + jobId);
+                }
+
+                if (preJob != null && preJob >= jobId) {
+                    throw new AssertionError("Jobs ID for Robot " + robot.id + " are not in increasing order");
+                }
+                preJob = jobId;
+            }
+        }
+
+
+        for (Map.Entry<Robot, TreeSet<Integer>> entry : robotToJobs.entrySet()) {
+            TreeSet<Integer> jobs = entry.getValue();
+            for (Integer jobId : jobs) {
+                if (unassignedJobs.contains(jobId)) {
+                    throw new AssertionError("Job " + jobId + " is both assigned and unassigned");
+                }
+            }
+        }
+
+
+        Set<Integer> AssignedJobs = new HashSet<>();
+        for (Map.Entry<Robot, TreeSet<Integer>> entry : robotToJobs.entrySet()) {
+            for (Integer jobId : entry.getValue()) {
+                if (!AssignedJobs.add(jobId)) {
+                    throw new AssertionError("Job " + jobId + " is assigned to many robots");
+                }
+            }
+        }
     }
 }
